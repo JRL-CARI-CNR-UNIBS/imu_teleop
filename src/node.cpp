@@ -37,6 +37,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ros_myo/MyoPose.h>
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
+#include <std_msgs/Bool.h>
 
 int main(int argc, char **argv)
 {
@@ -49,7 +50,14 @@ int main(int argc, char **argv)
 
 
   ros::ServiceClient configuration_client=nh.serviceClient<configuration_msgs::StartConfiguration>("/configuration_manager/start_configuration");
-  ros::ServiceClient stop_configuration_client=nh.serviceClient<configuration_msgs::StartConfiguration>("/configuration_manager/stop_configuration");
+  ros::ServiceClient stop_configuration_client=nh.serviceClient<configuration_msgs::StopConfiguration>("/configuration_manager/stop_configuration");
+
+  configuration_msgs::StartConfiguration srv_start;
+  srv_start.request.start_configuration='cart_teleop';
+  srv_start.request.strictness=1;
+
+  configuration_msgs::StopConfiguration srv_stop;
+  srv_stop.request.strictness=1;
 
   ros_helper::SubscriptionNotifier<sensor_msgs::JointState> js_sub(nh,"/manipulator/joint_states",1);
   if (!js_sub.waitForANewData(ros::Duration(10)))
@@ -70,6 +78,13 @@ int main(int argc, char **argv)
     ROS_ERROR("No topic received");
     return 0;
   }
+  
+  ros_helper::SubscriptionNotifier<std_msgs::Bool> bool_sub(nh,"/moveit_planning/active",1);
+  if (!bool_sub.waitForANewData(ros::Duration(10)))
+  {
+    ROS_ERROR("No topic received");
+    return 0;
+  }
 
   ros::Publisher jteleop_pub=nh.advertise<sensor_msgs::JointState>("/planner_hw/joint_teleop/target_joint_teleop",1);
   ros::Publisher cteleop_pub=nh.advertise<geometry_msgs::TwistStamped>("/planner_hw/cart_teleop/target_cart_teleop",1);
@@ -81,6 +96,7 @@ int main(int argc, char **argv)
   double vel_min=0.001;
   double a=std::exp(-st/tau);
   double rotz_angle=0;
+
 
   if (!nh.getParam("rotz_angle",rotz_angle))
   {
@@ -113,16 +129,27 @@ int main(int argc, char **argv)
 
   bool do_disable=false;
   bool disabled=false;
+  bool first_cicle=true;
+
   while (ros::ok())
   {
     ros::spinOnce();
     ros_myo::MyoPose gest=myo_pose_sub.getData();
+    std_msgs::Bool msgs_bool=bool_sub.getData();
+    bool activation=msgs_bool.data;
 
-    if (gest.pose==ros_myo::MyoPose::FIST)
+    if (gest.pose==ros_myo::MyoPose::FIST && !activation)
     {
+     /*if (first_cicle)
+     {
+       stop_configuration_client.call(srv_stop);
+       configuration_client.call(srv_start);
+     }*/
+
       do_disable=false;
       disabled=false;
-      ROS_INFO_THROTTLE(1,"actived");
+      first_cicle=false;
+      ROS_INFO_THROTTLE(1,"actived node vel");
       geometry_msgs::TwistStamped imu=imu_sub.getData();
       acc_in_g(0)=imu.twist.linear.x;
       acc_in_g(1)=imu.twist.linear.y;
@@ -130,7 +157,7 @@ int main(int argc, char **argv)
       acc_in_g_filt=a*acc_in_g_filt+(1-a)*acc_in_g;
       for (int idx=0;idx<3;idx++)
       {
-        if (std::abs(acc_in_g_filt(idx))<noise)
+        if ((std::abs(acc_in_g_filt(idx))<noise) && (std::abs(acc_in_g(idx))<noise))
           acc_in_g_satured(idx)=0;
         else
           acc_in_g_satured(idx)=acc_in_g_filt(idx);
@@ -149,7 +176,7 @@ int main(int argc, char **argv)
     }
     else
     {
-      ROS_INFO_THROTTLE(1,"disable");
+      ROS_INFO_THROTTLE(1,"disable node vel");
       acc_in_g.setZero();
       acc_in_g_filt.setZero();
       acc_in_g_satured.setZero();
@@ -157,6 +184,7 @@ int main(int argc, char **argv)
       acc_in_b_satured_old.setZero();
       vel_in_b.setZero();
       do_disable=true;
+      first_cicle=true;
     }
 
     if (!disabled)

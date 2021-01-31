@@ -6,4 +6,8 @@
 <!--  <remap from="/planner_hw/cart_teleop/target_cart_teleop" to="/planner_hw/cart_teleop/target_cart_teleop__"/>-->
   </node>
 
+<node pkg="imu_teleop" type="teaching_path_node" name="teaching_path_node"  output="screen">
+<!--  <remap from="/planner_hw/cart_teleop/target_cart_teleop" to="/planner_hw/cart_teleop/target_cart_teleop__"/>-->
+</node>
+
 </launch>
