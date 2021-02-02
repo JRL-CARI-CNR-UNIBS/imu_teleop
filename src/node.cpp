@@ -53,7 +53,7 @@ int main(int argc, char **argv)
   ros::ServiceClient stop_configuration_client=nh.serviceClient<configuration_msgs::StopConfiguration>("/configuration_manager/stop_configuration");
 
   configuration_msgs::StartConfiguration srv_start;
-  srv_start.request.start_configuration='cart_teleop';
+  srv_start.request.start_configuration="cart_teleop";
   srv_start.request.strictness=1;
 
   configuration_msgs::StopConfiguration srv_stop;
@@ -140,11 +140,12 @@ int main(int argc, char **argv)
 
     if (gest.pose==ros_myo::MyoPose::FIST && !activation)
     {
-     /*if (first_cicle)
+     if (first_cicle)
      {
-       stop_configuration_client.call(srv_stop);
+       //stop_configuration_client.call(srv_stop);
        configuration_client.call(srv_start);
-     }*/
+       ros::Duration(2).sleep();
+     }
 
       do_disable=false;
       disabled=false;

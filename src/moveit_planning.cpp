@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 
 
   configuration_msgs::StartConfiguration srv;
-  srv.request.start_configuration='trj_tracker';
+  srv.request.start_configuration="trj_tracker";
   srv.request.strictness=1;
 
   configuration_msgs::StopConfiguration srv_stop;
@@ -155,7 +155,8 @@ int main(int argc, char **argv)
                 active=true;
                 t0=ros::Time::now();
                 //stop_configuration_client.call(srv_stop);
-                //configuration_client.call(srv);
+                configuration_client.call(srv);
+                ros::Duration(2).sleep();
                 ROS_INFO_THROTTLE(1,"active node pos");
              }
         }
