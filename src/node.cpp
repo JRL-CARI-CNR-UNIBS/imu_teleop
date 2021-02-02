@@ -38,6 +38,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
 #include <std_msgs/Bool.h>
+#include <std_msgs/UInt8.h>
 
 int main(int argc, char **argv)
 {
@@ -88,6 +89,7 @@ int main(int argc, char **argv)
 
   ros::Publisher jteleop_pub=nh.advertise<sensor_msgs::JointState>("/planner_hw/joint_teleop/target_joint_teleop",1);
   ros::Publisher cteleop_pub=nh.advertise<geometry_msgs::TwistStamped>("/planner_hw/cart_teleop/target_cart_teleop",1);
+  ros::Publisher vibration_pub=nh.advertise<std_msgs::UInt8>("/myo_raw/vibrate",1);
 
   double tau=10*st;
   double coeff=0.5;
@@ -130,6 +132,7 @@ int main(int argc, char **argv)
   bool do_disable=false;
   bool disabled=false;
   bool first_cicle=true;
+  std_msgs::UInt8 msgs_vibr;
 
   while (ros::ok())
   {
@@ -145,6 +148,9 @@ int main(int argc, char **argv)
        //stop_configuration_client.call(srv_stop);
        configuration_client.call(srv_start);
        ros::Duration(2).sleep();
+
+       msgs_vibr.data=2;
+       vibration_pub.publish(msgs_vibr);
      }
 
       do_disable=false;
@@ -186,6 +192,9 @@ int main(int argc, char **argv)
       vel_in_b.setZero();
       do_disable=true;
       first_cicle=true;
+
+      //msgs_vibr.data=2;
+      //vibration_pub.publish(msgs_vibr);
     }
 
     if (!disabled)

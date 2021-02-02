@@ -1,4 +1,4 @@
-﻿/*
+/*
 Copyright (c) 2020, JRL-CARI CNR-STIIMA/UNIBS
 Manuel Beschi manuel.beschi@unibs.it
 All rights reserved.
@@ -38,7 +38,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <subscription_notifier/subscription_notifier.h>
 #include <ros_myo/MyoPose.h>
 #include <std_msgs/Bool.h>
-
+#include <std_msgs/UInt8.h>
 
 int main(int argc, char **argv)
 {
@@ -69,6 +69,8 @@ int main(int argc, char **argv)
   }
 
   ros::Publisher activation_pub=nh.advertise<std_msgs::Bool>("/moveit_planning/active",1);
+  ros::Publisher vibration_pub=nh.advertise<std_msgs::UInt8>("/myo_raw/vibrate",1);
+
 
   std::string group_name;
   if (!nh.getParam("group_name",group_name))
@@ -93,8 +95,10 @@ int main(int argc, char **argv)
 
   std::vector<std::vector<double>> waypoints;
   bool active=false;
+  bool repetition=false;
   ros::Time t0=ros::Time::now();
-  std_msgs::Bool msgs;
+  std_msgs::Bool msgs_bool;
+  std_msgs::UInt8 msgs_vibr;
   int lenght=waypoints.size();
   int gest_prec=0;
 
@@ -103,7 +107,7 @@ int main(int argc, char **argv)
     ros::spinOnce();
     ros_myo::MyoPose gest=myo_pose_sub.getData();
 
-    if (active)
+    if (active && !repetition)
     {
         if (gest.pose==3 && gest_prec!=3)
         {
@@ -113,12 +117,22 @@ int main(int argc, char **argv)
 
            waypoints.push_back(current_joint_configuration); // così aggiungi le configurazioni che vuoi al vettore dei punti.
            lenght=waypoints.size();
+
+           msgs_vibr.data=1;
+           vibration_pub.publish(msgs_vibr);
         }
 
         if (gest.pose==4)
         {
             if((ros::Time::now()-t0).toSec()>5)
              {
+                msgs_vibr.data=2;
+                vibration_pub.publish(msgs_vibr);
+
+                srv.request.start_configuration="trj_tracker";
+                configuration_client.call(srv);
+                ros::Duration(2).sleep();
+
                 active=false;
                 t0=ros::Time::now();
                 ROS_INFO_THROTTLE(1,"deactive node pose");
@@ -139,6 +153,9 @@ int main(int argc, char **argv)
                   }
                   group.execute(plan);
                 }
+
+                msgs_vibr.data=2;
+                vibration_pub.publish(msgs_vibr);
              }
         }
         else
@@ -148,27 +165,78 @@ int main(int argc, char **argv)
     }
     else
     {
-        if (gest.pose==4)
+        if (repetition)
         {
-            if((ros::Time::now()-t0).toSec()>5)
-             {
-                active=true;
-                t0=ros::Time::now();
-                //stop_configuration_client.call(srv_stop);
-                configuration_client.call(srv);
-                ros::Duration(2).sleep();
-                ROS_INFO_THROTTLE(1,"active node pos");
-             }
+            srv.request.start_configuration="trj_tracker";
+            configuration_client.call(srv);
+            ros::Duration(2).sleep();
+
+            for (unsigned int iw=0;iw<waypoints.size();iw++)
+            {
+              ROS_INFO("go to waypoint %u",iw);
+              group.setStartState(*group.getCurrentState());
+              group.setJointValueTarget(waypoints.at(iw));
+
+
+              moveit::planning_interface::MoveGroupInterface::Plan plan;
+
+              bool success = (group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+              if (!success)
+              {
+                ROS_ERROR("Planning failed computing waypoint %u", iw);
+                return 0;
+              }
+              group.execute(plan);
+            }
+            active=false;
+            repetition=false;
+
+            msgs_vibr.data=3;
+            vibration_pub.publish(msgs_vibr);
+
+            ROS_INFO_THROTTLE(1,"deactive repetition");
         }
         else
         {
-            t0=ros::Time::now();
-            ROS_INFO_THROTTLE(1,"time reset");
+            if (gest.pose==5)
+            {
+             active=true;
+             repetition=true;
+
+             msgs_vibr.data=3;
+             vibration_pub.publish(msgs_vibr);
+
+             ROS_INFO_THROTTLE(1,"repetition active");
+            }
+
+            if (gest.pose==4)
+            {
+                if((ros::Time::now()-t0).toSec()>5)
+                 {
+                    active=true;
+                    t0=ros::Time::now();
+                    //stop_configuration_client.call(srv_stop);
+                    srv.request.start_configuration="trj_tracker";
+                    configuration_client.call(srv);
+                    ros::Duration(2).sleep();
+
+                    ROS_INFO_THROTTLE(1,"active node pos");
+                    msgs_vibr.data=2;
+                    vibration_pub.publish(msgs_vibr);
+                 }
+            }
+            else
+            {
+                t0=ros::Time::now();
+                ROS_INFO_THROTTLE(1,"time reset");
+            }
         }
     }
 
-    msgs.data=active;
-    activation_pub.publish(msgs);
+
+
+    msgs_bool.data=active;
+    activation_pub.publish(msgs_bool);
     gest_prec=gest.pose;
 
    }
