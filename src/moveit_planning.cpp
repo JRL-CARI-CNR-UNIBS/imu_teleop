@@ -119,6 +119,9 @@ int main(int argc, char **argv)
         {
             if((ros::Time::now()-t0).toSec()>5)
              {
+                srv.request.start_configuration="trj_tracker";
+                configuration_client.call(srv);
+                ros::Duration(2).sleep();
                 active=false;
                 t0=ros::Time::now();
                 ROS_INFO_THROTTLE(1,"deactive node pose");
@@ -155,6 +158,7 @@ int main(int argc, char **argv)
                 active=true;
                 t0=ros::Time::now();
                 //stop_configuration_client.call(srv_stop);
+                srv.request.start_configuration="trj_tracker";
                 configuration_client.call(srv);
                 ros::Duration(2).sleep();
                 ROS_INFO_THROTTLE(1,"active node pos");
