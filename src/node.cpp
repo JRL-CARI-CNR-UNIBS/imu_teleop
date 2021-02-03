@@ -192,9 +192,6 @@ int main(int argc, char **argv)
       vel_in_b.setZero();
       do_disable=true;
       first_cicle=true;
-
-      //msgs_vibr.data=2;
-      //vibration_pub.publish(msgs_vibr);
     }
 
     if (!disabled)
