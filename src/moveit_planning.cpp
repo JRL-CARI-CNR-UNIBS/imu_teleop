@@ -28,6 +28,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit/robot_state/conversions.h>
 
+#include <moveit/robot_model_loader/robot_model_loader.h>
+#include <moveit/robot_model/robot_model.h>
+#include <moveit/robot_state/robot_state.h>
+
 #include <configuration_msgs/StartConfiguration.h>
 #include <configuration_msgs/StopConfiguration.h>
 #include <ros/ros.h>
@@ -35,6 +39,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ros_myo/MyoPose.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/UInt8.h>
+#include <imu_teleop/imu_teleop.h>
+#include <sensor_msgs/Imu.h>
+#include <sensor_msgs/JointState.h>
+#include <geometry_msgs/TwistStamped.h>
+#include <eigen3/Eigen/Dense>
+#include <eigen3/Eigen/Geometry>
+#include <ros/console.h>
 
 void change_config(std::string new_config, ros::ServiceClient configuration_client_channel)
 {
@@ -58,9 +69,19 @@ int main(int argc, char **argv)
   ros::ServiceClient configuration_client=nh.serviceClient<configuration_msgs::StartConfiguration>("/configuration_manager/start_configuration");
   ros::ServiceClient stop_configuration_client=nh.serviceClient<configuration_msgs::StopConfiguration>("/configuration_manager/stop_configuration");
 
-  configuration_msgs::StartConfiguration srv;
-  configuration_msgs::StopConfiguration srv_stop;
-  srv_stop.request.strictness=1;
+  ros_helper::SubscriptionNotifier<sensor_msgs::JointState> js_sub(nh,"/manipulator/joint_states",1);
+  if (!js_sub.waitForANewData(ros::Duration(10)))
+  {
+    ROS_ERROR("No topic received");
+    return 0;
+  }
+
+  ros_helper::SubscriptionNotifier<geometry_msgs::TwistStamped> imu_sub(nh,"/myo_raw/acc_twist_global",1);
+  if (!imu_sub.waitForANewData(ros::Duration(10)))
+  {
+    ROS_ERROR("No topic received");
+    return 0;
+  }
 
   ros_helper::SubscriptionNotifier<ros_myo::MyoPose> myo_pose_sub(nh,"/myo_raw/myo_gest",1);
   if (!myo_pose_sub.waitForANewData(ros::Duration(60)))
@@ -71,7 +92,8 @@ int main(int argc, char **argv)
 
   ros::Publisher activation_pub=nh.advertise<std_msgs::Bool>("/moveit_planning/active",1);
   ros::Publisher vibration_pub=nh.advertise<std_msgs::UInt8>("/myo_raw/vibrate",1);
-
+  ros::Publisher jteleop_pub=nh.advertise<sensor_msgs::JointState>("/planner_hw/joint_teleop/target_joint_teleop",1);
+  ros::Publisher cteleop_pub=nh.advertise<geometry_msgs::TwistStamped>("/planner_hw/cart_teleop/target_cart_teleop",1);
 
   std::string group_name;
   if (!nh.getParam("group_name",group_name))
@@ -93,26 +115,55 @@ int main(int argc, char **argv)
   std::vector<double> current_joint_configuration;
   trj_state.copyJointGroupPositions(group_name,current_joint_configuration);
 
-  const int NONE=0;
-  const int TEACH=1;
-  const int EXECUTION=2;
+  robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
+  const moveit::core::RobotModelPtr& kinematic_model = robot_model_loader.getModel();
+  ROS_INFO("Model frame: %s", kinematic_model->getModelFrame().c_str());
+  const moveit::core::JointModelGroup* joint_model_group = kinematic_model->getJointModelGroup(group_name);
+  const std::vector<std::string>& joint_names = joint_model_group->getVariableNames();
+  std::vector<double> joint_values;
+
+  //enum State {NONE, TEACH, EXECUTION, VEL_CONTROL, DIRECTION_CONTROL, EXECUTE_DIRECTION};
 
   std::vector<std::vector<double>> waypoints;
-  int state=NONE;
+  //int state=NONE;
+  imu_teleop::State state=imu_teleop::State::NONE;
   int gest_prec=0;
   bool active=false;
   int lenght=waypoints.size();
   std_msgs::UInt8 msgs_vibr;
   std_msgs::Bool msgs_bool;
   ros::Time t0=ros::Time::now();
+  ros::Time t0_direction=ros::Time::now();
+  Eigen::Vector3d final_pos;
+  Eigen::Vector3d versor;
+  double movement_lenght=0.1;
+  imu_teleop::ImuConfig imuData;
+  bool execute_end=false;
+  bool direction_taken=false;
+
+
+  double tau=10*st;
+  double coeff=0.1;
+  double vel_max=0.1;
+  double noise=0.2;
+  double vel_min=-vel_max;
+  double a=std::exp(-st/tau);
+  double rotz_angle=0;
+  final_pos.setZero();
+  versor.setZero();
+
+  Eigen::Affine3d T_b_g;
+  T_b_g.setIdentity();
+  Eigen::AngleAxisd rotz(rotz_angle,Eigen::Vector3d::UnitZ());
+  T_b_g=rotz;
 
   while (ros::ok())
   {
       ros::spinOnce();
       ros_myo::MyoPose gest=myo_pose_sub.getData();
 
-      switch (state) {
-      case TEACH:
+      switch (state) { //switch degli stati
+      case imu_teleop::State::TEACH:{
           if (gest.pose==3 && gest_prec!=3)
           {
             moveit::core::RobotState trj_state = *group.getCurrentState();
@@ -125,9 +176,9 @@ int main(int argc, char **argv)
             msgs_vibr.data=1;
             vibration_pub.publish(msgs_vibr);
           }
-          break;
+      } break;
 
-      case EXECUTION:
+      case imu_teleop::State::EXECUTION:{
           change_config("trj_tracker",configuration_client);
 
           for (unsigned int iw=0;iw<waypoints.size();iw++)
@@ -145,45 +196,196 @@ int main(int argc, char **argv)
               return 0;
             }
             group.execute(plan);
+            ros::Duration(2).sleep();
            }
 
           active=false;
-          break;
+      } break;
 
-      default:
+      case imu_teleop::State::VEL_CONTROL:{
+        geometry_msgs::TwistStamped imu=imu_sub.getData();
+        imuData.acc_in_g_(0)=imu.twist.linear.x;
+        imuData.acc_in_g_(1)=imu.twist.linear.y;
+        imuData.acc_in_g_(2)=imu.twist.linear.z;
+
+        ROS_INFO_STREAM("acc_in_g");
+        ROS_INFO_STREAM(imuData.acc_in_g_);
+
+        imuData.velocityConfiguration(a,noise,T_b_g,vel_max,coeff,st);
+        ROS_INFO_STREAM("acc_in_g_filt");
+        ROS_INFO_STREAM(imuData.acc_in_g_filt_);
+        ROS_INFO_STREAM("acc_in_g_satured_");
+        ROS_INFO_STREAM(imuData.acc_in_g_satured_);
+        ROS_INFO_STREAM("aacc_in_b_satured_");
+        ROS_INFO_STREAM(imuData.acc_in_b_satured_);
+        ROS_INFO_STREAM("vel_in_b_");
+        ROS_INFO_STREAM(imuData.vel_in_b_);
+
+        geometry_msgs::TwistStamped twist;
+        twist.header.frame_id="BASE";
+        twist.header.stamp=ros::Time::now();
+        twist.twist.linear.x=imuData.vel_in_b_(0);
+        twist.twist.linear.y=imuData.vel_in_b_(1);
+        twist.twist.linear.z=0;//imuData.vel_in_b_(2);
+        cteleop_pub.publish(twist);
+
+      } break;
+
+      case imu_teleop::State::DIRECTION_CONTROL:{
+        if(gest.pose==2)
+        {
+          geometry_msgs::TwistStamped imu=imu_sub.getData();
+          imuData.acc_in_g_(0)=imu.twist.linear.x;
+          imuData.acc_in_g_(1)=imu.twist.linear.y;
+          imuData.acc_in_g_(2)=imu.twist.linear.z;
+
+          imuData.velocityConfiguration(a,noise,T_b_g,vel_max,coeff,st);
+          direction_taken=true;
+        }
+      } break;
+
+      case imu_teleop::State::EXECUTE_DIRECTION:{
+        versor=imuData.getVersor();
+        ROS_INFO_THROTTLE(1,"versor\n");
+        ROS_INFO_STREAM(versor);
+
+        moveit::core::RobotStatePtr kinematic_state=group.getCurrentState();
+
+        kinematic_state->copyJointGroupPositions(joint_model_group, joint_values);
+        ROS_INFO_THROTTLE(1,"actual joint");
+        for (std::size_t i = 0; i < joint_names.size(); ++i)
+        {
+          ROS_INFO("Joint %s: %f", joint_names[i].c_str(), joint_values[i]);
+        }
+        geometry_msgs::PoseStamped T_w_t=group.getCurrentPose();
+        geometry_msgs::Pose gripperPose=T_w_t.pose;
+        ROS_INFO_THROTTLE(1,"current pose\n");
+        ROS_INFO_STREAM( T_w_t);
+
+        gripperPose.position.x+=(versor(0)*movement_lenght);
+        gripperPose.position.y+=(versor(1)*movement_lenght);
+        gripperPose.position.z+=(versor(2)*movement_lenght);
+        ROS_INFO_THROTTLE(1,"target pose\n");
+        ROS_INFO_STREAM(gripperPose);
+
+        double timeout = 0.1;
+        bool found_ik = kinematic_state->setFromIK(joint_model_group, gripperPose, timeout);
+        if (found_ik)
+        {
+          ROS_INFO_THROTTLE(1,"cinematica inversa");
+          kinematic_state->copyJointGroupPositions(joint_model_group, joint_values);
+          for (std::size_t i = 0; i < joint_names.size(); ++i)
+          {
+            ROS_INFO("Joint %s: %f", joint_names[i].c_str(), joint_values[i]);
+          }
+        }
+        else
+        {
+          ROS_INFO("Did not find IK solution");
+        }
+
+        group.setStartState(*group.getCurrentState());
+        group.setJointValueTarget(*kinematic_state);
+
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        ROS_INFO_THROTTLE(1,"plan");
+
+        bool success = (group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+        ros::Duration(2).sleep();
+        if (!success)
+        {
+          ROS_ERROR("Planning failed computing waypoint");
+          return 0;
+        }
+        ROS_INFO_THROTTLE(1,"group plan");
+        group.execute(plan);
+        ROS_INFO_THROTTLE(1,"execute plan");
+        ros::Duration(2).sleep();
+
+        execute_end=true;
+
+        /*versor=imuData.getVersor();
+        ROS_INFO_THROTTLE(1,"versor\n");
+        ROS_INFO_STREAM(versor);
+        geometry_msgs::PoseStamped T_w_t=group.getCurrentPose();
+        ROS_INFO_THROTTLE(1,"current pose\n");
+        ROS_INFO_STREAM( T_w_t);
+        T_w_t.pose.position.x+=(versor(0)*movement_lenght);
+        T_w_t.pose.position.y=T_w_t.pose.position.y+(versor(1)*movement_lenght);
+        T_w_t.pose.position.z=T_w_t.pose.position.z+versor(2)*movement_lenght;
+        ROS_INFO_THROTTLE(1,"target pose\n");
+        ROS_INFO_STREAM(T_w_t);
+        group.setStartState(*group.getCurrentState());
+        group.setPoseTarget(T_w_t);
+        ROS_INFO_THROTTLE(1,"target set");
+
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        ROS_INFO_THROTTLE(1,"plan");
+
+        bool success = (group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+        ros::Duration(2).sleep();
+        if (!success)
+        {
+          ROS_ERROR("Planning failed computing waypoint");
+          return 0;
+        }
+        ROS_INFO_THROTTLE(1,"group plan");
+        group.execute(plan);
+        ROS_INFO_THROTTLE(1,"execute plan");
+        ros::Duration(2).sleep();
+        execute_end=true;*/
+      } break;
+
+      default: {
           ros::Duration(st).sleep();
-          break;
+      } break;
       }
 
-      if (state==TEACH)
-      {
-       if(gest.pose==4)
-       {
-           if ((ros::Time::now()-t0).toSec()>5)
-           {
-            state=EXECUTION;
+      switch (state) { //switch delle transizioni
+      case imu_teleop::State::TEACH: {
+          if(gest.pose==4)
+          {
+              if ((ros::Time::now()-t0).toSec()>5)
+              {
+               state=imu_teleop::State::EXECUTION;
+               t0=ros::Time::now();
+
+               ROS_INFO_THROTTLE(1,"deactive TEACH");
+
+               msgs_vibr.data=2;
+               vibration_pub.publish(msgs_vibr);
+              }
+          }
+          else
+          {
             t0=ros::Time::now();
+          }
 
-            msgs_vibr.data=2;
+      } break;
+
+      case imu_teleop::State::EXECUTION: {
+          if (!active)
+          {
+            state=imu_teleop::State::NONE;
+            ROS_INFO_THROTTLE(1,"deactive EXECUTION");
+
+            msgs_vibr.data=3;
             vibration_pub.publish(msgs_vibr);
-           }
-       }
-       else
-       {
-         t0=ros::Time::now();
-       }
-      }
+          }
 
-      if (state==NONE)
-      {
+      } break;
+
+      case imu_teleop::State::NONE: {
           if(gest.pose==4)
           {
            if ((ros::Time::now()-t0).toSec()>5)
            {
-            state=TEACH;
+            state=imu_teleop::State::TEACH;
             active=true;
             t0=ros::Time::now();
             change_config("trj_tracker",configuration_client);
+
+            ROS_INFO_THROTTLE(1,"actived TEACH");
 
             msgs_vibr.data=2;
             vibration_pub.publish(msgs_vibr);
@@ -192,37 +394,134 @@ int main(int argc, char **argv)
           else
           {
             t0=ros::Time::now();
-            ROS_INFO_THROTTLE(1,"time reset");
+            //ROS_INFO_THROTTLE(1,"time reset");
           }
-
-
 
           if (gest.pose==5)
           {
-              state=EXECUTION;
+              state=imu_teleop::State::EXECUTION;
               active=true;
+
+              ROS_INFO_THROTTLE(1,"active EXECUTION");
 
               msgs_vibr.data=3;
               vibration_pub.publish(msgs_vibr);
           }
+
+          if (gest.pose==2)
+          {
+            imuData.vectorReset();
+
+            msgs_vibr.data=2;
+            vibration_pub.publish(msgs_vibr);
+
+            change_config("cart_teleop",configuration_client);
+            state=imu_teleop::State::VEL_CONTROL;
+
+            ROS_INFO_THROTTLE(1,"active VEL CONTROL");
+
+          }
+
+          if(gest.pose==3)
+          {
+           if ((ros::Time::now()-t0_direction).toSec()>5)
+           {
+            imuData.vectorReset();
+
+            msgs_vibr.data=2;
+            vibration_pub.publish(msgs_vibr);
+
+            change_config("cart_teleop",configuration_client);
+            state=imu_teleop::State::DIRECTION_CONTROL;
+
+            ROS_INFO_THROTTLE(1,"actived DIRECTION CONTROL");
+
+            t0_direction=ros::Time::now();
+           }
+          }
+          else
+          {
+            t0_direction=ros::Time::now();
+            //ROS_INFO_THROTTLE(1,"time reset");
+          }
+      } break;
+
+      case imu_teleop::State::VEL_CONTROL: {
+          if (gest.pose!=2)
+            {
+             imuData.vectorReset();
+             geometry_msgs::TwistStamped twist;
+             twist.header.frame_id="BASE";
+             twist.header.stamp=ros::Time::now();
+             twist.twist.linear.x=imuData.vel_in_b_(0);
+             twist.twist.linear.y=imuData.vel_in_b_(1);
+             twist.twist.linear.z=0;//imuData.vel_in_b_(2);
+             cteleop_pub.publish(twist);
+
+             state=imu_teleop::State::NONE;
+             msgs_vibr.data=2;
+
+             vibration_pub.publish(msgs_vibr);
+             ROS_INFO_THROTTLE(1,"deactive VEL CONTROL");
+
+
+            }
+      } break;
+
+      case imu_teleop::State::DIRECTION_CONTROL: {
+          if(gest.pose==3)
+          {
+           if ((ros::Time::now()-t0_direction).toSec()>5)
+           {
+             msgs_vibr.data=2;
+             vibration_pub.publish(msgs_vibr);
+            state=imu_teleop::State::NONE;
+            ROS_INFO_THROTTLE(1,"deactive DIRECTION CONTROL");
+
+            imuData.vectorReset();
+            t0_direction=ros::Time::now();
+           }
+          }
+          else
+          {
+            t0_direction=ros::Time::now();
+            //ROS_INFO_THROTTLE(1,"time reset");
+          }
+
+          if(gest.pose!=2 && direction_taken)
+          {
+            state=imu_teleop::State::EXECUTE_DIRECTION;
+            msgs_vibr.data=3;
+            vibration_pub.publish(msgs_vibr);
+            change_config("trj_tracker",configuration_client);
+            ROS_INFO_THROTTLE(1,"active EXECUTE DIRECTION");
+            direction_taken=false;
+          }
+      } break;
+
+      case imu_teleop::State::EXECUTE_DIRECTION: {
+        if (execute_end)
+        {
+          imuData.vectorReset();
+          change_config("cart_teleop",configuration_client);
+          msgs_vibr.data=3;
+          vibration_pub.publish(msgs_vibr);
+          state=imu_teleop::State::DIRECTION_CONTROL;
+          ROS_INFO_THROTTLE(1,"deactive EXECUTE DIRECTION");
+          execute_end=false;
+        }
+      } break;
+
+
       }
-
-      if (state==EXECUTION && !active)
-      {
-        state=NONE;
-
-        msgs_vibr.data=3;
-        vibration_pub.publish(msgs_vibr);
-      }
-
 
       msgs_bool.data=active;
       activation_pub.publish(msgs_bool);
       gest_prec=gest.pose;
+
   }
 
-
-    }
+  }
 
   /* std::vector<std::vector<double>> waypoints;
    bool active=false;

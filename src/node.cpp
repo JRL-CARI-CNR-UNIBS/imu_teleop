@@ -26,8 +26,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-#include <ros/ros.h>
+/*#include <ros/ros.h>
 #include <configuration_msgs/StartConfiguration.h>
 #include <configuration_msgs/StopConfiguration.h>
 #include <sensor_msgs/Imu.h>
@@ -95,7 +94,7 @@ int main(int argc, char **argv)
   double coeff=0.5;
   double vel_max=0.1;
   double noise=0.2;
-  double vel_min=0.001;
+  double vel_min=-0.1;
   double a=std::exp(-st/tau);
   double rotz_angle=0;
 
@@ -117,6 +116,8 @@ int main(int argc, char **argv)
   Eigen::Vector3d acc_in_b_satured; //b base frame of robot
   Eigen::Vector3d acc_in_b_satured_old; //b base frame of robot
   Eigen::Vector3d vel_in_b;
+  Eigen::Vector3d vel_in_b_old;
+  Eigen::Vector3d pos_in_b;
 
   acc_in_g.setZero();
   acc_in_g_filt.setZero();
@@ -124,6 +125,9 @@ int main(int argc, char **argv)
   acc_in_b_satured.setZero();
   acc_in_b_satured_old.setZero();
   vel_in_b.setZero();
+  vel_in_b_old.setZero();
+  pos_in_b.setZero();
+
   Eigen::Affine3d T_b_g;
   T_b_g.setIdentity();
   Eigen::AngleAxisd rotz(rotz_angle,Eigen::Vector3d::UnitZ());
@@ -179,7 +183,10 @@ int main(int argc, char **argv)
         else if (vel_in_b(idx)<-vel_max)
           vel_in_b(idx)=-vel_max;
       }
+      pos_in_b=pos_in_b+coeff*st*0.5*(vel_in_b+vel_in_b_old);
+
       acc_in_b_satured_old=acc_in_b_satured;
+      vel_in_b_old=vel_in_b;
     }
     else
     {
@@ -210,4 +217,6 @@ int main(int argc, char **argv)
     lp.sleep();
   }
   return 0;
-}
+}*/
+
+
