@@ -39,6 +39,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ros_myo/MyoPose.h>
 #include <std_msgs/Bool.h>
 #include <std_msgs/UInt8.h>
+#include <std_msgs/Float64MultiArray.h>
 #include <imu_teleop/imu_teleop.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/JointState.h>
@@ -94,6 +95,8 @@ int main(int argc, char **argv)
   ros::Publisher vibration_pub=nh.advertise<std_msgs::UInt8>("/myo_raw/vibrate",1);
   ros::Publisher jteleop_pub=nh.advertise<sensor_msgs::JointState>("/planner_hw/joint_teleop/target_joint_teleop",1);
   ros::Publisher cteleop_pub=nh.advertise<geometry_msgs::TwistStamped>("/planner_hw/cart_teleop/target_cart_teleop",1);
+  ros::Publisher control_vel=nh.advertise<geometry_msgs::TwistStamped>("velocity",1);
+  ros::Publisher control_pos=nh.advertise<geometry_msgs::PoseStamped>("position",1);
 
   std::string group_name;
   if (!nh.getParam("group_name",group_name))
@@ -129,6 +132,8 @@ int main(int argc, char **argv)
   int lenght=waypoints.size();
   std_msgs::UInt8 msgs_vibr;
   std_msgs::Bool msgs_bool;
+  geometry_msgs::TwistStamped vel;
+  geometry_msgs::PoseStamped pos;
 
   Eigen::Vector3d final_pos;
   Eigen::Vector3d versor;
@@ -237,7 +242,18 @@ int main(int argc, char **argv)
           imuData.acc_in_g_(2)=imu.twist.linear.z;
 
           imuData.velocityConfiguration(a,noise,T_b_g,vel_max,coeff,st);
-
+          vel.twist.linear.x=imuData.vel_in_b_(0);
+          vel.twist.linear.y=imuData.vel_in_b_(1);
+          vel.twist.linear.z=imuData.vel_in_b_(2);
+          vel.header.stamp=ros::Time::now();
+          vel.header.frame_id=imu.header.frame_id;
+          pos.pose.position.x=imuData.position_(0);
+          pos.pose.position.y=imuData.position_(1);
+          pos.pose.position.z=imuData.position_(2);
+          pos.header.stamp=ros::Time::now();
+          pos.header.frame_id=imu.header.frame_id;
+          control_vel.publish(vel);
+          control_pos.publish(pos);
           direction_taken=true;
         }
       } break;
