@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+<!--<rosparam command="load" file="$(find imu_teleop)/config/params.yaml" />>-->
+
+<!--   <node pkg="imu_teleop" type="imu_teleop_node" name="imu_teleop_node"  output="screen"> >-->
+<!--  <remap from="/planner_hw/cart_teleop/target_cart_teleop" to="/planner_hw/cart_teleop/target_cart_teleop__"/>-->
+<!--  </node> >-->
+
+<node pkg="imu_teleop" type="findmyoerror" name="findmyoerror"  output="screen">
+<!--  <remap from="/planner_hw/cart_teleop/target_cart_teleop" to="/planner_hw/cart_teleop/target_cart_teleop__"/>-->
+</node>
+
+</launch>

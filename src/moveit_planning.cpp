@@ -103,13 +103,12 @@ int main(int argc, char **argv)
   }
 
   moveit::planning_interface::MoveGroupInterface group(group_name);
-  group.setStartState(*group.getCurrentState());
-
   if (!group.startStateMonitor(10))
   {
     ROS_ERROR("Unable to get the current state of the move group %s",group_name.c_str());
     return 0;
   }
+  group.setStartState(*group.getCurrentState());
 
   moveit::core::RobotState trj_state = *group.getCurrentState();
   std::vector<double> current_joint_configuration;
@@ -117,10 +116,8 @@ int main(int argc, char **argv)
 
   robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
   const moveit::core::RobotModelPtr& kinematic_model = robot_model_loader.getModel();
-  ROS_INFO("Model frame: %s", kinematic_model->getModelFrame().c_str());
   const moveit::core::JointModelGroup* joint_model_group = kinematic_model->getJointModelGroup(group_name);
   const std::vector<std::string>& joint_names = joint_model_group->getVariableNames();
-  std::vector<double> joint_values;
 
   //enum State {NONE, TEACH, EXECUTION, VEL_CONTROL, DIRECTION_CONTROL, EXECUTE_DIRECTION};
 
@@ -132,8 +129,7 @@ int main(int argc, char **argv)
   int lenght=waypoints.size();
   std_msgs::UInt8 msgs_vibr;
   std_msgs::Bool msgs_bool;
-  ros::Time t0=ros::Time::now();
-  ros::Time t0_direction=ros::Time::now();
+
   Eigen::Vector3d final_pos;
   Eigen::Vector3d versor;
   double movement_lenght=0.1;
@@ -141,14 +137,13 @@ int main(int argc, char **argv)
   bool execute_end=false;
   bool direction_taken=false;
 
-
   double tau=10*st;
   double coeff=0.1;
   double vel_max=0.1;
   double noise=0.2;
   double vel_min=-vel_max;
   double a=std::exp(-st/tau);
-  double rotz_angle=0;
+  double rotz_angle=0.0;
   final_pos.setZero();
   versor.setZero();
 
@@ -156,6 +151,8 @@ int main(int argc, char **argv)
   T_b_g.setIdentity();
   Eigen::AngleAxisd rotz(rotz_angle,Eigen::Vector3d::UnitZ());
   T_b_g=rotz;
+  ros::Time t0=ros::Time::now();
+  ros::Time t0_direction=ros::Time::now();
 
   while (ros::ok())
   {
@@ -240,6 +237,7 @@ int main(int argc, char **argv)
           imuData.acc_in_g_(2)=imu.twist.linear.z;
 
           imuData.velocityConfiguration(a,noise,T_b_g,vel_max,coeff,st);
+
           direction_taken=true;
         }
       } break;
@@ -248,8 +246,11 @@ int main(int argc, char **argv)
         versor=imuData.getVersor();
         ROS_INFO_THROTTLE(1,"versor\n");
         ROS_INFO_STREAM(versor);
+        ROS_INFO_THROTTLE(1,"position\n");
+        ROS_INFO_STREAM(imuData.position_);
 
         moveit::core::RobotStatePtr kinematic_state=group.getCurrentState();
+        std::vector<double> joint_values;
 
         kinematic_state->copyJointGroupPositions(joint_model_group, joint_values);
         ROS_INFO_THROTTLE(1,"actual joint");
@@ -366,11 +367,11 @@ int main(int argc, char **argv)
       case imu_teleop::State::EXECUTION: {
           if (!active)
           {
-            state=imu_teleop::State::NONE;
-            ROS_INFO_THROTTLE(1,"deactive EXECUTION");
-
             msgs_vibr.data=3;
             vibration_pub.publish(msgs_vibr);
+
+            state=imu_teleop::State::NONE;
+            ROS_INFO_THROTTLE(1,"deactive EXECUTION");
           }
 
       } break;
@@ -380,15 +381,16 @@ int main(int argc, char **argv)
           {
            if ((ros::Time::now()-t0).toSec()>5)
            {
+
+            msgs_vibr.data=2;
+            vibration_pub.publish(msgs_vibr);
+
             state=imu_teleop::State::TEACH;
             active=true;
             t0=ros::Time::now();
             change_config("trj_tracker",configuration_client);
 
             ROS_INFO_THROTTLE(1,"actived TEACH");
-
-            msgs_vibr.data=2;
-            vibration_pub.publish(msgs_vibr);
            }
           }
           else
@@ -503,9 +505,9 @@ int main(int argc, char **argv)
         if (execute_end)
         {
           imuData.vectorReset();
-          change_config("cart_teleop",configuration_client);
           msgs_vibr.data=3;
           vibration_pub.publish(msgs_vibr);
+          change_config("cart_teleop",configuration_client);
           state=imu_teleop::State::DIRECTION_CONTROL;
           ROS_INFO_THROTTLE(1,"deactive EXECUTE DIRECTION");
           execute_end=false;

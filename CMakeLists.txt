@@ -40,3 +40,9 @@ add_dependencies(teaching_path_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin
 target_link_libraries(teaching_path_node
   ${catkin_LIBRARIES}
 )
+
+add_executable(findmyoerror src/findmyoerror.cpp)
+add_dependencies(findmyoerror ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(findmyoerror
+  ${catkin_LIBRARIES}
+)

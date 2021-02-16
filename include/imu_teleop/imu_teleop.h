@@ -39,7 +39,7 @@ public:
     void saturation(double noise, Eigen::Affine3d T_b_g);
     void safetyLimits(double max);
     void integralVelocity(double coeff, double st);
-    void integralPosition(double coeff, double st);
+    void integralPosition(double st);
     Eigen::Vector3d getVersor();
     void vectorReset();
     void generateVersor();
@@ -91,14 +91,14 @@ inline void ImuConfig::integralVelocity(double coeff, double st)
    vel_in_b_=vel_in_b_+(coeff*st*0.5*(acc_in_b_satured_+acc_in_b_satured_old_));
 }
 
-inline void ImuConfig::integralPosition(double coeff, double st)
+inline void ImuConfig::integralPosition(double st)
 {
-   position_=position_+(coeff*st*0.5*(vel_in_b_+vel_in_b_old_));
+   position_=position_+(st*0.5*(vel_in_b_+vel_in_b_old_));
 }
 
 inline void ImuConfig::generateVersor()
 {
-  double norma=sqrt(pow(position_(0),2)+pow(position_(1),2)+pow(position_(2),2));
+  double norma=sqrt((position_(0)*position_(0))+(position_(1)*position_(1))+(position_(2)*position_(2)));
   versor_=position_/norma;
 }
 
@@ -108,7 +108,7 @@ inline void ImuConfig::velocityConfiguration(double a, double noise,Eigen::Affin
     saturation(noise,T_b_g);
     integralVelocity(coeff, st);
     safetyLimits(vel_max);
-    integralPosition(coeff, st);
+    integralPosition(st);
     generateVersor();
     acc_in_b_satured_old_=acc_in_b_satured_;
     vel_in_b_old_=vel_in_b_;
