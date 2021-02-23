@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
   subscription_notifier
   std_msgs
   moveit_ros_planning_interface
+  tf_conversions
 )
 
 find_package(Eigen3 REQUIRED)
@@ -17,7 +18,7 @@ find_package(Eigen3 REQUIRED)
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES imu_teleop
-  CATKIN_DEPENDS geometry_msgs ros_myo roscpp sensor_msgs configuration_msgs subscription_notifier std_msgs
+  CATKIN_DEPENDS geometry_msgs ros_myo roscpp sensor_msgs configuration_msgs subscription_notifier std_msgs tf_conversions
   DEPENDS Eigen3
 )
 

@@ -98,8 +98,7 @@ inline void ImuConfig::integralPosition(double st)
 
 inline void ImuConfig::generateVersor()
 {
-  double norma=sqrt((position_(0)*position_(0))+(position_(1)*position_(1))+(position_(2)*position_(2)));
-  versor_=position_/norma;
+  versor_=position_.normalized();
 }
 
 inline void ImuConfig::velocityConfiguration(double a, double noise,Eigen::Affine3d T_b_g, double vel_max,double coeff, double st)

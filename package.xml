@@ -64,6 +64,7 @@
   <depend>configuration_msgs</depend>
   <depend>subscription_notifier</depend>
   <depend>std_msgs</depend>
+  <depend>tf_conversions</depend>
 
 
 

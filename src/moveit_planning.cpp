@@ -47,6 +47,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
 #include <ros/console.h>
+#include <tf/transform_listener.h>
+#include <tf/transform_datatypes.h>
+#include <eigen3/Eigen/Core>
+#include <tf_conversions/tf_eigen.h>
 
 void change_config(std::string new_config, ros::ServiceClient configuration_client_channel)
 {
@@ -57,12 +61,54 @@ void change_config(std::string new_config, ros::ServiceClient configuration_clie
     ros::Duration(2).sleep();
 }
 
+double findMyoError(tf::TransformListener& listener)
+{
+  ros::Duration(0.01).sleep();
+  double media=0.0593;
+  double amplitude=0.4531;
+  tf::StampedTransform transform;
+  Eigen::Affine3d T_gs;
+  Eigen::Vector3d z_g(0,0,1);
+
+  for (int itrial=0;itrial<10;itrial++)
+  {
+      try{
+         listener.lookupTransform("/imu_global", "/myo_raw",
+                                  ros::Time(0), transform);
+         ROS_INFO("ok");
+         break;
+       }
+       catch (tf::TransformException ex){
+         ROS_ERROR("%s",ex.what());
+         ros::Duration(1.0).sleep();
+       }
+  }
+
+   tf::transformTFToEigen(transform,T_gs);
+
+   Eigen::Vector3d Zs=T_gs.linear().col(2);
+   Eigen::Vector3d Ys=T_gs.linear().col(1);
+   double cos_theta=Zs.dot(z_g);
+   double cos_gamma=Ys.dot(z_g);
+   double theta=acos(cos_theta);
+   double gamma=acos(cos_gamma);
+
+   if(gamma>(3.1416/2.0))
+   {
+     theta=-theta;
+   }
+   double offset=media-amplitude*sin(theta+(3.1416*0.5)-0.25);
+   return offset;
+}
+
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "move_group_interface_tutorial");
   ros::NodeHandle nh;
   ros::AsyncSpinner spinner(1);
   spinner.start();
+
+  //("rosparam dump ~/.ros/err_param.yaml /myo_error");
 
   double st=0.01;
   ros::WallRate lp(1.0/st);
@@ -98,6 +144,12 @@ int main(int argc, char **argv)
   ros::Publisher control_vel=nh.advertise<geometry_msgs::TwistStamped>("velocity",1);
   ros::Publisher control_pos=nh.advertise<geometry_msgs::PoseStamped>("position",1);
 
+  std::string realFake_configuration;
+  if (!nh.getParam("teaching_configuration",realFake_configuration))
+  {
+    ROS_INFO("Configuration is not defined");
+  }
+
   std::string group_name;
   if (!nh.getParam("group_name",group_name))
   {
@@ -124,6 +176,8 @@ int main(int argc, char **argv)
 
   //enum State {NONE, TEACH, EXECUTION, VEL_CONTROL, DIRECTION_CONTROL, EXECUTE_DIRECTION};
 
+  tf::TransformListener listener;
+
   std::vector<std::vector<double>> waypoints;
   //int state=NONE;
   imu_teleop::State state=imu_teleop::State::NONE;
@@ -142,13 +196,19 @@ int main(int argc, char **argv)
   bool execute_end=false;
   bool direction_taken=false;
 
-  double tau=10*st;
-  double coeff=0.1;
-  double vel_max=0.1;
-  double noise=0.2;
+  double tau;
+  !nh.getParam("tau",tau);
+  double coeff;
+  !nh.getParam("coeff",coeff);
+  double vel_max;
+  !nh.getParam("vel_max",vel_max);
+  double noise;
+  !nh.getParam("noise",noise);
+  double rotz_angle;
+  !nh.getParam("rotz_angle",rotz_angle);
   double vel_min=-vel_max;
   double a=std::exp(-st/tau);
-  double rotz_angle=0.0;
+  //double rotz_angle=0.0;
   final_pos.setZero();
   versor.setZero();
 
@@ -162,6 +222,7 @@ int main(int argc, char **argv)
   while (ros::ok())
   {
       ros::spinOnce();
+      lp.sleep();
       ros_myo::MyoPose gest=myo_pose_sub.getData();
 
       switch (state) { //switch degli stati
@@ -206,9 +267,10 @@ int main(int argc, char **argv)
 
       case imu_teleop::State::VEL_CONTROL:{
         geometry_msgs::TwistStamped imu=imu_sub.getData();
+        double offsetZ=findMyoError(listener);
         imuData.acc_in_g_(0)=imu.twist.linear.x;
         imuData.acc_in_g_(1)=imu.twist.linear.y;
-        imuData.acc_in_g_(2)=imu.twist.linear.z;
+        imuData.acc_in_g_(2)=imu.twist.linear.z-offsetZ;
 
         ROS_INFO_STREAM("acc_in_g");
         ROS_INFO_STREAM(imuData.acc_in_g_);
@@ -228,7 +290,7 @@ int main(int argc, char **argv)
         twist.header.stamp=ros::Time::now();
         twist.twist.linear.x=imuData.vel_in_b_(0);
         twist.twist.linear.y=imuData.vel_in_b_(1);
-        twist.twist.linear.z=0;//imuData.vel_in_b_(2);
+        twist.twist.linear.z=imuData.vel_in_b_(2);
         cteleop_pub.publish(twist);
 
       } break;
@@ -237,11 +299,12 @@ int main(int argc, char **argv)
         if(gest.pose==2)
         {
           geometry_msgs::TwistStamped imu=imu_sub.getData();
+          double offsetZ=findMyoError(listener);
           imuData.acc_in_g_(0)=imu.twist.linear.x;
           imuData.acc_in_g_(1)=imu.twist.linear.y;
-          imuData.acc_in_g_(2)=imu.twist.linear.z;
+          imuData.acc_in_g_(2)=imu.twist.linear.z-offsetZ;
 
-          imuData.velocityConfiguration(a,noise,T_b_g,vel_max,coeff,st);
+          imuData.velocityConfiguration(a,noise,T_b_g,10000.0,coeff,st);
           vel.twist.linear.x=imuData.vel_in_b_(0);
           vel.twist.linear.y=imuData.vel_in_b_(1);
           vel.twist.linear.z=imuData.vel_in_b_(2);
@@ -354,7 +417,6 @@ int main(int argc, char **argv)
       } break;
 
       default: {
-          ros::Duration(st).sleep();
       } break;
       }
 
@@ -404,7 +466,7 @@ int main(int argc, char **argv)
             state=imu_teleop::State::TEACH;
             active=true;
             t0=ros::Time::now();
-            change_config("trj_tracker",configuration_client);
+            change_config(realFake_configuration,configuration_client);
 
             ROS_INFO_THROTTLE(1,"actived TEACH");
            }
@@ -522,8 +584,7 @@ int main(int argc, char **argv)
         {
           imuData.vectorReset();
           msgs_vibr.data=3;
-          vibration_pub.publish(msgs_vibr);
-          change_config("cart_teleop",configuration_client);
+
           state=imu_teleop::State::DIRECTION_CONTROL;
           ROS_INFO_THROTTLE(1,"deactive EXECUTE DIRECTION");
           execute_end=false;

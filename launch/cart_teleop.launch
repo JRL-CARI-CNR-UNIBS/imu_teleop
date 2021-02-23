@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
 <launch>
-<rosparam command="load" file="$(find imu_teleop)/config/params.yaml" />
+<arg name="fake" default="false"/>
+
+<rosparam if="$(arg fake)"     command="load" file="$(find imu_teleop)/config/params_fake.yaml" />
+<rosparam unless="$(arg fake)" command="load" file="$(find imu_teleop)/config/params.yaml" />
 
 <!--   <node pkg="imu_teleop" type="imu_teleop_node" name="imu_teleop_node"  output="screen"> >-->
 <!--  <remap from="/planner_hw/cart_teleop/target_cart_teleop" to="/planner_hw/cart_teleop/target_cart_teleop__"/>-->
