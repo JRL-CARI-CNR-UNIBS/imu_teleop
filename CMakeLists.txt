@@ -10,33 +10,40 @@ find_package(catkin REQUIRED COMPONENTS
   subscription_notifier
   std_msgs
   moveit_ros_planning_interface
+  tf_conversions
 )
 
 find_package(Eigen3 REQUIRED)
 
 catkin_package(
-#  INCLUDE_DIRS include
+  INCLUDE_DIRS include
   LIBRARIES imu_teleop
-  CATKIN_DEPENDS geometry_msgs ros_myo roscpp sensor_msgs configuration_msgs subscription_notifier std_msgs
+  CATKIN_DEPENDS geometry_msgs ros_myo roscpp sensor_msgs configuration_msgs subscription_notifier std_msgs tf_conversions
   DEPENDS Eigen3
 )
 
 
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
   ${Eigen3_INCLUDE_DIRS}
 )
 
-add_executable(imu_teleop_node src/node.cpp)
-add_dependencies(imu_teleop_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(imu_teleop_node
-  ${catkin_LIBRARIES}
-)
+#add_executable(imu_teleop_node src/node.cpp)
+#add_dependencies(imu_teleop_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+#target_link_libraries(imu_teleop_node
+#  ${catkin_LIBRARIES}
+#)
 
 
 add_executable(teaching_path_node src/moveit_planning.cpp)
 add_dependencies(teaching_path_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(teaching_path_node
+  ${catkin_LIBRARIES}
+)
+
+add_executable(findmyoerror src/findmyoerror.cpp)
+add_dependencies(findmyoerror ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(findmyoerror
   ${catkin_LIBRARIES}
 )
