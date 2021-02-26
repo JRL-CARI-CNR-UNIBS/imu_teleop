@@ -145,6 +145,7 @@ int main(int argc, char **argv)
               return 0;
             }
             group.execute(plan);
+            ros::Duration(0.2).sleep();
            }
 
           active=false;
