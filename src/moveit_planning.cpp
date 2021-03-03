@@ -142,6 +142,7 @@ int main(int argc, char **argv)
   ros::Publisher jteleop_pub=nh.advertise<sensor_msgs::JointState>("/planner_hw/joint_teleop/target_joint_teleop",1);
   ros::Publisher cteleop_pub=nh.advertise<geometry_msgs::TwistStamped>("/planner_hw/cart_teleop/target_cart_teleop",1);
   ros::Publisher control_vel=nh.advertise<geometry_msgs::TwistStamped>("velocity",1);
+  ros::Publisher control_acc=nh.advertise<geometry_msgs::TwistStamped>("acceleration",1);
   ros::Publisher control_pos=nh.advertise<geometry_msgs::PoseStamped>("position",1);
 
   std::string realFake_configuration;
@@ -187,6 +188,7 @@ int main(int argc, char **argv)
   std_msgs::UInt8 msgs_vibr;
   std_msgs::Bool msgs_bool;
   geometry_msgs::TwistStamped vel;
+  geometry_msgs::TwistStamped acc;
   geometry_msgs::PoseStamped pos;
 
   Eigen::Vector3d final_pos;
@@ -276,6 +278,24 @@ int main(int argc, char **argv)
         ROS_INFO_STREAM(imuData.acc_in_g_);
 
         imuData.velocityConfiguration(a,noise,T_b_g,vel_max,coeff,st);
+        vel.twist.linear.x=imuData.vel_in_b_(0);
+        vel.twist.linear.y=imuData.vel_in_b_(1);
+        vel.twist.linear.z=imuData.vel_in_b_(2);
+        vel.header.stamp=ros::Time::now();
+        vel.header.frame_id=imu.header.frame_id;
+        pos.pose.position.x=imuData.position_(0);
+        pos.pose.position.y=imuData.position_(1);
+        pos.pose.position.z=imuData.position_(2);
+        pos.header.stamp=ros::Time::now();
+        pos.header.frame_id=imu.header.frame_id;
+        acc.twist.linear.x=imuData.acc_in_b_satured_(0);
+        acc.twist.linear.y=imuData.acc_in_b_satured_(1);
+        acc.twist.linear.z=imuData.acc_in_b_satured_(2);
+        acc.header.stamp=ros::Time::now();
+        acc.header.frame_id=imu.header.frame_id;
+        control_vel.publish(vel);
+        control_pos.publish(pos);
+        control_acc.publish(acc);
         ROS_INFO_STREAM("acc_in_g_filt");
         ROS_INFO_STREAM(imuData.acc_in_g_filt_);
         ROS_INFO_STREAM("acc_in_g_satured_");
@@ -315,8 +335,14 @@ int main(int argc, char **argv)
           pos.pose.position.z=imuData.position_(2);
           pos.header.stamp=ros::Time::now();
           pos.header.frame_id=imu.header.frame_id;
+          acc.twist.linear.x=imuData.acc_in_b_satured_(0);
+          acc.twist.linear.y=imuData.acc_in_b_satured_(1);
+          acc.twist.linear.z=imuData.acc_in_b_satured_(2);
+          acc.header.stamp=ros::Time::now();
+          acc.header.frame_id=imu.header.frame_id;
           control_vel.publish(vel);
           control_pos.publish(pos);
+          control_acc.publish(acc);
           direction_taken=true;
         }
       } break;
@@ -464,6 +490,7 @@ int main(int argc, char **argv)
             vibration_pub.publish(msgs_vibr);
 
             state=imu_teleop::State::TEACH;
+            waypoints.clear();
             active=true;
             t0=ros::Time::now();
             change_config(realFake_configuration,configuration_client);

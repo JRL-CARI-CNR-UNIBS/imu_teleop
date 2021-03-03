@@ -2,6 +2,6 @@ rotz_angle: 1.5708
 scale_coef: 0.05
 teaching_configuration: "manual_guidance"
 tau: 0.1
-coeff: 0.5
+coeff: 0.3
 vel_max: 0.1
 noise: 0.2
