@@ -25,8 +25,9 @@ int main(int argc, char **argv)
     double st=0.01;
     ros::WallRate lp(1.0/st);
     tf::TransformListener listener;
+    ros::Duration(3).sleep();
 
-    ros_helper::SubscriptionNotifier<geometry_msgs::TwistStamped> imu_sub(nh,"/myo_raw/acc_twist_global",1);
+/*    ros_helper::SubscriptionNotifier<geometry_msgs::TwistStamped> imu_sub(nh,"/myo_raw/acc_twist_global",1);
     if (!imu_sub.waitForANewData(ros::Duration(10)))
     {
       ROS_ERROR("No topic received");
@@ -59,7 +60,7 @@ int main(int argc, char **argv)
     ROS_INFO_STREAM("error norm");
     ROS_INFO_STREAM(error.norm());
     //system("rosparam dump ~/.ros/err_param.yaml /myo_error");
-
+*/
     tf::StampedTransform transform;
     for (int itrial=0;itrial<10;itrial++)
     {
@@ -79,28 +80,29 @@ int main(int argc, char **argv)
      tf::transformTFToEigen(transform,T_gs);
 
      Eigen::Vector3d z_g(0,0,1);
+     Eigen::Vector3d y_g(0,1,0);
+     Eigen::Vector3d x_g(1,0,0);
 
      ROS_INFO_STREAM("Zs=" <<T_gs.linear().col(2));
      Eigen::Vector3d Zs=T_gs.linear().col(2);
      Eigen::Vector3d Ys=T_gs.linear().col(1);
-     double cos_theta=Zs.dot(z_g);
-     double cos_gamma=Ys.dot(z_g);
+     Eigen::Vector3d Xs=T_gs.linear().col(0);
+     double cos_theta=Xs.dot(x_g);
+     double cos_gamma=Ys.dot(y_g);
      double theta=acos(cos_theta);
      double gamma=acos(cos_gamma);
-     double media=0.0593;
-     double amplitude=0.4531;
 
      ROS_INFO("gamma=");
      ROS_INFO_STREAM(gamma);
-     if(gamma>(3.1416/2.0))
+    /* if(gamma>(3.1416/2.0))
      {
        theta=-theta;
-     }
+     }*/
      ROS_INFO("theta=");
      ROS_INFO_STREAM(theta);
-    double offset=media-amplitude*sin(theta+(3.1416*0.5)-0.25);
+   /* double offset=media-amplitude*sin(theta+(3.1416*0.5)-0.25);
     ROS_INFO("offset=");
-    ROS_INFO_STREAM(offset);
+    ROS_INFO_STREAM(offset);*/
 }
 
 
