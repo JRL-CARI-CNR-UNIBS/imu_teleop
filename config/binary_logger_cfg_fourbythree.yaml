@@ -1,0 +1,126 @@
+binary_logger:
+  num_worker_threads: 10
+  # test_path: is the path where the binary file will be saved (if empty the destination directory will be '/home/user/.ros' )
+  test_path: ""
+
+  # test_name: is the name of the test. The final file name will be [test_name]_[topic_type]_[topic_name].bin
+  # NOTE '/' will be substitute with '_'
+  test_name: "test"
+
+  # manager_name: name of the nodlet manager (need to be equal to the name in the launch file)
+  manager_name: 'binary_logger'
+
+  # list of nodelet (unrelated to binary_logger package) that the user do not want to stop
+  unstoppable_nodelets: []
+
+  # Type of the topic that need to be logged (supported JointState, Imu, PoseStamped, WrenchStamped, Float64MultiArray)
+  topic_type:
+    - 'JointState'
+    - 'Imu'
+    - 'PoseStamped'
+    - 'TwistStamped'
+    - 'Float64'
+    - 'Tf'
+    #- 'WrenchStamped'
+    #- 'Float64MultiArray'
+
+
+  ##################################
+  # For each topic type:
+  ##################################
+
+  Tf:
+    topic_names:
+    - 'flange'
+
+
+    # Acquisition time (to be specified for each topic)
+    duration:
+    - 1000
+
+    # Message decimation (to be specified for each topic)
+    decimation:
+    - 1
+
+flange:
+  base_frame: "base"
+  tool_frame: "flange"
+
+  Imu:
+    topic_names:
+    - '/myo_raw/myo_imu_global'
+
+    # Acquisition time (to be specified for each topic)
+    duration:
+    - 1000
+
+    # Message decimation (to be specified for each topic)
+    decimation:
+    - 1
+
+
+  Float64:
+    topic_names:
+    - '/myo_raw/myo_gest_std'
+
+    # Acquisition time (to be specified for each topic)
+    duration:
+    - 1000
+
+    # Message decimation (to be specified for each topic)
+    decimation:
+    - 1
+
+  # Topic type
+  JointState:
+    # Acquisition time
+    topic_names:
+    - '/link/joint_states'
+    - '/link/joint_pos_target'
+
+    # Acquisition time (to be specified for each topic)
+    duration:
+    - 1000
+    - 1000
+
+    # Message decimation (to be specified for each topic)
+    decimation:
+    - 1
+    - 1
+
+
+
+  # Topic type
+  PoseStamped:
+    # Acquisition time
+    topic_names:
+      - '/position'
+
+    # Acquisition time (to be specified for each topic)
+    duration:
+      - 1000
+
+    # Message decimation (to be specified for each topic)
+    decimation:
+      - 1
+
+# Topic type
+  TwistStamped:
+    # Acquisition time
+    topic_names:
+      - '/velocity'
+      - '/planner_hi/cart_teleop/target_cart_teleop'
+      - '/acceleration'
+
+    # Acquisition time (to be specified for each topic)
+    duration:
+    - 1000
+    - 1000
+    - 1000
+
+    # Message decimation (to be specified for each topic)
+    decimation:
+    - 1
+    - 1
+    - 1
+

@@ -538,7 +538,7 @@ int main(int argc, char **argv)
             msgs_vibr.data=2;
             vibration_pub.publish(msgs_vibr);
 
-            change_config("cart_teleop",configuration_client);
+            //change_config("cart_teleop",configuration_client);
             state=imu_teleop::State::DIRECTION_CONTROL;
 
             ROS_INFO_THROTTLE(1,"actived DIRECTION CONTROL");

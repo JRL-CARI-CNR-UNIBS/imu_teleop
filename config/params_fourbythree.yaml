@@ -1,0 +1,8 @@
+rotz_angle: 0
+scale_coef: 0.05
+teaching_configuration: "trj_tracker"
+tau: 0.1
+coeff: 0.2
+vel_max: 0.1
+noise: 0.2
+group_name: collabot
